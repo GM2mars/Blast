@@ -6,10 +6,20 @@ export class GridMaster {
   height: number = 0;
 
 
-  constructor(grid: Tile[][]) {
-    this.grid = grid;
-    this.width = grid.length;
-    this.height = grid[0] ? grid[0].length : 0;
+  constructor(w: number, h: number) {
+    this.width = w;
+    this.height = h;
+  }
+
+  setCell(x: number, y: number, tile: Tile) {
+    !this.grid[x] && (this.grid[x] = []);
+
+    tile && tile.setCoordinates(x, y);
+    this.grid[x][y] = tile;
+  }
+
+  getCell(x: number, y: number) {
+    return this.grid[x][y];
   }
 
   getConnectedCells(x, y) {
@@ -44,71 +54,6 @@ export class GridMaster {
     return result;
   }
 
-  getCellsInRadius(x, y, radius) {
-    if (!this.isValidCoordinate(x, y) || radius < 0) return [];
-
-    const result = [];
-
-    for (let dx = -radius; dx <= radius; dx++) {
-      for (let dy = -radius; dy <= radius; dy++) {
-        const newX = x + dx;
-        const newY = y + dy;
-
-        if (dx === 0 && dy === 0) continue;
-
-        if (this.isValidCoordinate(newX, newY)) {
-          result.push(this.grid[newX][newY]);
-        }
-      }
-    }
-
-    return result;
-  }
-
-  getCellsInCircularRadius(x, y, radius) {
-    if (!this.isValidCoordinate(x, y) || radius < 0) return [];
-
-    const result = [];
-
-    for (let dx = -radius; dx <= radius; dx++) {
-      for (let dy = -radius; dy <= radius; dy++) {
-        const newX = x + dx;
-        const newY = y + dy;
-
-        if (dx === 0 && dy === 0) continue;
-
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance <= radius && this.isValidCoordinate(newX, newY)) {
-          result.push(this.grid[newX][newY]);
-        }
-      }
-    }
-
-    return result;
-  }
-
-  dropTiles(animateFn: (tile: Tile) => void) {
-    for (let x = 0; x < this.width; x++) {
-      let writeIndex = 0;
-
-      for (let y = 0; y < this.height; y++) {
-
-        if (this.grid[x][y] !== null) {
-
-          if (writeIndex !== y) {
-            this.grid[x][writeIndex] = this.grid[x][y];
-            this.grid[x][y] = null;
-            this.grid[x][writeIndex].y = writeIndex;
-
-            animateFn && animateFn(this.grid[x][writeIndex]);
-          }
-          writeIndex++;
-        }
-      }
-    }
-  }
-
   private _fisherYatesShuffle(array) {
     for (let i = array.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -121,8 +66,11 @@ export class GridMaster {
     const firstTile = this.grid[tile1.x][tile1.y];
     const secondTile = this.grid[tile2.x][tile2.y];
 
-    this.grid[tile1.x][tile1.y] = secondTile;
+    firstTile.setCoordinates(tile2.x, tile2.y);
+    secondTile.setCoordinates(tile1.x, tile1.y);
+
     this.grid[tile2.x][tile2.y] = firstTile;
+    this.grid[tile1.x][tile1.y] = secondTile;
   }
 
   shuffle(attempts = 5) {
@@ -140,21 +88,24 @@ export class GridMaster {
 
     for (let x = 0; x < this.width; x++) {
       for (let y = 0; y < this.height; y++) {
-        this.grid[x][y] = allTiles[index++];
+        const tile = allTiles[index++];
+
+        tile.setCoordinates(x, y);
+        this.grid[x][y] = tile;
       }
     }
 
     if (!this.hasValidMoves() && attempts > 0) this.shuffle(attempts - 1);
   }
 
-  updateGrid(grid) {
-    this.grid = grid;
-    this.width = grid.length;
-    this.height = grid[0] ? grid[0].length : 0;
-  }
-
   getGrid() {
     return this.grid;
+  }
+
+  setGrid(grid) {
+    this.grid = grid;
+    this.width = grid.length;
+    this.height = grid[0].length;
   }
 
   isValidCoordinate(x, y) {

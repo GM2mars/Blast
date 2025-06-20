@@ -1,4 +1,5 @@
-import { Swape } from "../Objects/Busters/Swape";
+import { Booster } from "../Objects/Boosters/Booster";
+import { Swape } from "../Objects/Boosters/Swape";
 import Tile from "../Objects/Tile/Tile";
 import { GridMaster } from "../Utils/GridMaster";
 
@@ -52,13 +53,12 @@ export default class GameController extends cc.Component {
   @property(cc.Integer)
   connectionCount = 2;
 
-  @property(cc.Node)
-  firstBuster: cc.Node = null;
+  @property([cc.Node])
+  boosters: cc.Node[] = [];
 
-  _swape: Swape = null;
+  activeBooster: Booster = null;
 
-  gridMaster: GridMaster = null;
-  tiles: any[][] = [];
+  gm: GridMaster = null;
   score: number = 0;
   moves: number = 0;
   gameOver: boolean = false;
@@ -68,27 +68,41 @@ export default class GameController extends cc.Component {
   }
 
   initGame() {
-    this.tiles = [];
     this.score = 0;
     this.moves = this.maxMoves;
     this.gameOver = false;
-
-    for (let x = 0; x < this.fieldWidth; x++) {
-      this.tiles[x] = [];
-    }
+    this.gm = new GridMaster(this.fieldWidth, this.fieldHeight);
 
     this.hideEndGameUI();
     this.createGameField();
     this.updateUI();
 
-    this.gridMaster = new GridMaster(this.tiles);
+    this.activeBooster = null;
+    this.boosters.forEach(booster => {
+      const boosterScript = booster.getComponent(Booster);
 
-    this._swape = this.firstBuster.getComponent('Swape');
-    this.firstBuster.on(cc.Node.EventType.TOUCH_END, this.activateBuster, this);
+      boosterScript.initBooster();
+      booster.on(cc.Node.EventType.TOUCH_END, this.activateBooster, this);
+    });
   }
 
-  activateBuster() {
-    this._swape.setActive(true);
+  activateBooster(event: any) {
+    const boosterScript = event.target.getComponent(Booster);
+
+    if (boosterScript.disabled) return;
+
+    if (this.activeBooster?.isActive && boosterScript.isActive) {
+      boosterScript.setActive(false);
+      this.activeBooster = null;
+      return;
+    }
+
+    if (this.activeBooster?.isActive && !boosterScript.isActive) {
+      this.activeBooster.setActive(false);
+    }
+
+    this.activeBooster = boosterScript;
+    this.activeBooster.setActive(true);
   }
 
   hideEndGameUI() {
@@ -104,14 +118,16 @@ export default class GameController extends cc.Component {
 
     for (let x = 0; x < this.fieldWidth; x++) {
       for (let y = 0; y < this.fieldHeight; y++) {
-        this.createTile(x, y, startX, startY);
+        const tile = this.createTile(x, y, startX, startY);
+
+        this.gm.setCell(x, y, tile);
       }
     }
   }
 
   createTile(x: number, y: number, startX: number, startY: number) {
     const tileNode = cc.instantiate(this.tilePrefab);
-    const tileComponent = tileNode.getComponent('Tile');
+    const tileComponent = tileNode.getComponent(Tile);
     const spriteIndex = Math.floor(Math.random() * this.tilesCount);
     const posX = startX + x * this.tileSizeW;
     const posY = startY + y * this.tileSizeH;
@@ -119,22 +135,27 @@ export default class GameController extends cc.Component {
     tileComponent.init(x, y, spriteIndex, this);
     tileNode.setPosition(posX, posY);
     this.gameArea.addChild(tileNode);
-    this.tiles[x][y] = tileComponent;
+
+    return tileComponent;
   }
 
   onTileClicked(clickedTile: Tile) {
     if (this.gameOver) return;
 
-    if (this._swape.isActive) {
-      this._swape
-        .setGrid(this.gridMaster.getGrid())
-        .selectTile(clickedTile);
+    let group: Tile[] = null;
 
-      this.gridMaster.updateGrid(this._swape.getGrid());
-      return;
+    if (this.activeBooster?.isActive) {
+      const result = this.activeBooster
+        .setGrid(this.gm.getGrid())
+        .selectTile(clickedTile)
+        .getResult();
+
+      if (result?.group) group = result.group;
+      if (result?.grid) this.gm.setGrid(result.grid);
+      if (result?.complete) return;
+    } else {
+      group = this.gm.getConnectedCells(clickedTile.x, clickedTile.y);
     }
-
-    const group = this.gridMaster.getConnectedCells(clickedTile.x, clickedTile.y);
 
     if (group.length <= this.connectionCount) {
       return;
@@ -156,7 +177,7 @@ export default class GameController extends cc.Component {
     }, this.animationDuration * 2);
   }
 
-  burnTiles(group: any[]) {
+  burnTiles(group: Tile[]) {
     for (let tile of group) {
       const fadeOut = cc.fadeOut(this.animationDuration);
       const scaleDown = cc.scaleTo(this.animationDuration, 0);
@@ -166,7 +187,7 @@ export default class GameController extends cc.Component {
         spawn,
         cc.callFunc(() => {
           tile.node.destroy();
-          this.tiles[tile.x][tile.y] = null;
+          this.gm.setCell(tile.x, tile.y, null);
         })
       ));
     }
@@ -178,14 +199,15 @@ export default class GameController extends cc.Component {
         let writeIndex = 0;
 
         for (let y = 0; y < this.fieldHeight; y++) {
-
-          if (this.tiles[x][y] !== null) {
-
+          if (this.gm.getCell(x, y) !== null) {
             if (writeIndex !== y) {
-              this.tiles[x][writeIndex] = this.tiles[x][y];
-              this.tiles[x][y] = null;
-              this.tiles[x][writeIndex].y = writeIndex;
-              this.animateTileToPosition(this.tiles[x][writeIndex]);
+              this.gm.setCell(x, writeIndex, this.gm.getCell(x, y));
+              this.gm.setCell(x, y, null);
+
+              const tile = this.gm.getCell(x, writeIndex);
+
+              tile.setCoordinates(x, writeIndex);
+              this.animateTileToPosition(tile);
             }
             writeIndex++;
           }
@@ -201,11 +223,12 @@ export default class GameController extends cc.Component {
 
       for (let x = 0; x < this.fieldWidth; x++) {
         for (let y = 0; y < this.fieldHeight; y++) {
+          const cell = this.gm.getCell(x, y);
 
-          if (this.tiles[x][y] === null) {
-            const tile = this.tiles[x][y];
+          if (cell === null) {
+            const tile = this.createTile(x, y, startX, startY);
 
-            this.createTile(x, y, startX, startY);
+            this.gm.setCell(x, y, tile);
 
             if (tile) {
               tile.node.setPosition(
@@ -255,9 +278,9 @@ export default class GameController extends cc.Component {
   }
 
   checkGameOver() {
-    let hasMoves = this.gridMaster.hasValidMoves(2);
+    if (this.gameOver) return;
 
-    console.log({ hasMoves })
+    let hasMoves = this.gm.hasValidMoves(2);
 
     if (!hasMoves || this.moves <= 0) {
       this.gameOver = true;
@@ -290,6 +313,10 @@ export default class GameController extends cc.Component {
   }
 
   restartGame() {
+    this.boosters.forEach(booster => {
+      booster.off(cc.Node.EventType.TOUCH_END, this.activateBooster, this);
+    });
+
     this.initGame();
   }
 }

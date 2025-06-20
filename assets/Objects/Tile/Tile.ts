@@ -12,7 +12,6 @@ export default class Tile extends cc.Component {
   gameController: any = null;
 
   onLoad() {
-    // Добавление обработчика клика
     this.node.on(cc.Node.EventType.TOUCH_END, this.onTileTouch, this);
   }
 
@@ -25,19 +24,19 @@ export default class Tile extends cc.Component {
     this.getComponent(cc.Sprite).spriteFrame = this.spriteFrames[value];
   }
 
-  onTileTouch(event: cc.Event.EventTouch) {
-    // Предотвращение обработки, если игра закончена
-    if (this.gameController && !this.gameController.gameOver) {
-      // Анимация нажатия
-      this.playClickAnimation();
+  setCoordinates(x: number, y: number) {
+    this.x = x;
+    this.y = y;
+  }
 
-      // Уведомление контроллера игры о клике
+  onTileTouch(event: cc.Event.EventTouch) {
+    if (this.gameController && !this.gameController.gameOver) {
+      this.playClickAnimation();
       this.gameController.onTileClicked(this);
     }
   }
 
   playClickAnimation() {
-    // Простая анимация масштабирования при клике
     const scaleUp = cc.scaleTo(0.1, 1.1);
     const scaleDown = cc.scaleTo(0.1, 1.0);
     const sequence = cc.sequence(scaleUp, scaleDown);
@@ -46,7 +45,6 @@ export default class Tile extends cc.Component {
   }
 
   onDestroy() {
-    // Очистка обработчиков событий
     this.node.off(cc.Node.EventType.TOUCH_END, this.onTileTouch, this);
   }
 }

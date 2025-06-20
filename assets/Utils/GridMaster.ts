@@ -117,6 +117,14 @@ export class GridMaster {
     }
   }
 
+  swapeTiles(tile1: { x: number, y: number }, tile2: { x: number, y: number }) {
+    const firstTile = this.grid[tile1.x][tile1.y];
+    const secondTile = this.grid[tile2.x][tile2.y];
+
+    this.grid[tile1.x][tile1.y] = secondTile;
+    this.grid[tile2.x][tile2.y] = firstTile;
+  }
+
   shuffle(attempts = 5) {
     const allTiles = [];
 
@@ -143,6 +151,10 @@ export class GridMaster {
     this.grid = grid;
     this.width = grid.length;
     this.height = grid[0] ? grid[0].length : 0;
+  }
+
+  getGrid() {
+    return this.grid;
   }
 
   isValidCoordinate(x, y) {

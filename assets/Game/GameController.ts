@@ -1,3 +1,4 @@
+import { Swape } from "../Objects/Busters/Swape";
 import Tile from "../Objects/Tile/Tile";
 import { GridMaster } from "../Utils/GridMaster";
 
@@ -51,6 +52,11 @@ export default class GameController extends cc.Component {
   @property(cc.Integer)
   connectionCount = 2;
 
+  @property(cc.Node)
+  firstBuster: cc.Node = null;
+
+  _swape: Swape = null;
+
   gridMaster: GridMaster = null;
   tiles: any[][] = [];
   score: number = 0;
@@ -76,6 +82,13 @@ export default class GameController extends cc.Component {
     this.updateUI();
 
     this.gridMaster = new GridMaster(this.tiles);
+
+    this._swape = this.firstBuster.getComponent('Swape');
+    this.firstBuster.on(cc.Node.EventType.TOUCH_END, this.activateBuster, this);
+  }
+
+  activateBuster() {
+    this._swape.setActive(true);
   }
 
   hideEndGameUI() {
@@ -111,6 +124,15 @@ export default class GameController extends cc.Component {
 
   onTileClicked(clickedTile: Tile) {
     if (this.gameOver) return;
+
+    if (this._swape.isActive) {
+      this._swape
+        .setGrid(this.gridMaster.getGrid())
+        .selectTile(clickedTile);
+
+      this.gridMaster.updateGrid(this._swape.getGrid());
+      return;
+    }
 
     const group = this.gridMaster.getConnectedCells(clickedTile.x, clickedTile.y);
 

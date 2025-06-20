@@ -331,9 +331,12 @@
     "fieldHeight": 9,
     "tileSizeW": 50,
     "tileSizeH": 55,
-    "targetScore": 100000,
+    "targetScore": 5000,
     "maxMoves": 30,
     "tilesCount": 5,
+    "animationDuration": 0.3,
+    "connectionCount": 2,
+    "firstBuster": null,
     "_id": "e7sDyKl1BGBp5wv7iIZTqH"
   },
   {
@@ -1765,7 +1768,7 @@
         "__id__": 39
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [],
     "_prefab": null,
     "_opacity": 255,

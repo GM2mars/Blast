@@ -5,6 +5,7 @@ export class GridMaster {
   width: number = 0;
   height: number = 0;
 
+  private shuffleAttempts: number = 10;
 
   constructor(w: number, h: number) {
     this.width = w;
@@ -73,7 +74,7 @@ export class GridMaster {
     this.grid[tile1.x][tile1.y] = secondTile;
   }
 
-  shuffle(attempts = 5, countGroup: number = 2) {
+  shuffle(countGroup: number = 2) {
     const allTiles = [];
 
     for (let x = 0; x < this.width; x++) {
@@ -95,7 +96,10 @@ export class GridMaster {
       }
     }
 
-    if (!this.hasValidMoves(countGroup) && attempts > 0) this.shuffle(attempts - 1, countGroup);
+    if (!this.hasValidMoves(countGroup) && this.shuffleAttempts > 0) {
+      this.shuffleAttempts--;
+      this.shuffle(countGroup);
+    }
   }
 
   getGrid() {
@@ -115,7 +119,7 @@ export class GridMaster {
   hasValidMoves(countGroup: number = 2) {
     for (let x = 0; x < this.width; x++) {
       for (let y = 0; y < this.height; y++) {
-        if (this.grid[x][y] == null) continue;
+        if (this.grid[x][y] === null) continue;
 
         let validCount = 0;
         const currentValue = this.grid[x][y].value;
@@ -127,10 +131,8 @@ export class GridMaster {
         ];
 
         for (let [nx, ny] of neighbors) {
-          if (this.isValidCoordinate(nx, ny) && this.grid[nx][ny].value === currentValue) validCount++;
+          if (this.isValidCoordinate(nx, ny) && this.grid[nx][ny]?.value === currentValue) validCount++;
         }
-
-        console.log({ validCount, countGroup })
 
         if (validCount >= countGroup) return true;
       }

@@ -73,7 +73,7 @@ export class GridMaster {
     this.grid[tile1.x][tile1.y] = secondTile;
   }
 
-  shuffle(attempts = 5) {
+  shuffle(attempts = 5, countGroup: number = 2) {
     const allTiles = [];
 
     for (let x = 0; x < this.width; x++) {
@@ -95,7 +95,7 @@ export class GridMaster {
       }
     }
 
-    if (!this.hasValidMoves() && attempts > 0) this.shuffle(attempts - 1);
+    if (!this.hasValidMoves(countGroup) && attempts > 0) this.shuffle(attempts - 1, countGroup);
   }
 
   getGrid() {
@@ -112,7 +112,7 @@ export class GridMaster {
     return x >= 0 && x < this.width && y >= 0 && y < this.height;
   }
 
-  hasValidMoves(countGroup: number = 1) {
+  hasValidMoves(countGroup: number = 2) {
     for (let x = 0; x < this.width; x++) {
       for (let y = 0; y < this.height; y++) {
         if (this.grid[x][y] == null) continue;
@@ -129,6 +129,8 @@ export class GridMaster {
         for (let [nx, ny] of neighbors) {
           if (this.isValidCoordinate(nx, ny) && this.grid[nx][ny].value === currentValue) validCount++;
         }
+
+        console.log({ validCount, countGroup })
 
         if (validCount >= countGroup) return true;
       }

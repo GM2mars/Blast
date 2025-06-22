@@ -1,5 +1,5 @@
-import { Booster } from "../Objects/Boosters/Booster";
-import { Swape } from "../Objects/Boosters/Swape";
+import { BoosterButton } from "../Boosters/BoosterComponent";
+import { BoosterActionType, BoosterResult } from "../Boosters/BoosterResult";
 import Tile from "../Objects/Tile/Tile";
 import { GridMaster } from "../Utils/GridMaster";
 
@@ -50,13 +50,14 @@ export default class GameController extends cc.Component {
   @property(cc.Float)
   animationDuration = 0.3;
 
-  @property(cc.Integer)
+  @property({ type: cc.Integer, tooltip: "without target tile" })
   connectionCount = 2;
 
-  @property([cc.Node])
-  boosters: cc.Node[] = [];
+  @property(cc.Integer)
+  lives = 3;
 
-  activeBooster: Booster = null;
+  private activeBoosterButton: BoosterButton | null = null;
+  private selectedTilesForBooster: Tile[] = [];
 
   gm: GridMaster = null;
   score: number = 0;
@@ -72,37 +73,19 @@ export default class GameController extends cc.Component {
     this.moves = this.maxMoves;
     this.gameOver = false;
     this.gm = new GridMaster(this.fieldWidth, this.fieldHeight);
-
     this.hideEndGameUI();
     this.createGameField();
     this.updateUI();
-
-    this.activeBooster = null;
-    this.boosters.forEach(booster => {
-      const boosterScript = booster.getComponent(Booster);
-
-      boosterScript.initBooster();
-      booster.on(cc.Node.EventType.TOUCH_END, this.activateBooster, this);
-    });
   }
 
-  activateBooster(event: any) {
-    const boosterScript = event.target.getComponent(Booster);
-
-    if (boosterScript.disabled) return;
-
-    if (this.activeBooster?.isActive && boosterScript.isActive) {
-      boosterScript.setActive(false);
-      this.activeBooster = null;
-      return;
+  public activateBooster(boosterButton: BoosterButton) {
+    if (this.activeBoosterButton) {
+      this.activeBoosterButton.setActiveState(false);
     }
 
-    if (this.activeBooster?.isActive && !boosterScript.isActive) {
-      this.activeBooster.setActive(false);
-    }
-
-    this.activeBooster = boosterScript;
-    this.activeBooster.setActive(true);
+    this.activeBoosterButton = boosterButton;
+    this.activeBoosterButton.setActiveState(true);
+    this.selectedTilesForBooster = [];
   }
 
   hideEndGameUI() {
@@ -139,117 +122,178 @@ export default class GameController extends cc.Component {
     return tileComponent;
   }
 
-  onTileClicked(clickedTile: Tile) {
+  async onTileClicked(clickedTile: Tile) {
     if (this.gameOver) return;
 
-    let group: Tile[] = null;
+    if (this.activeBoosterButton) {
+      if (!this.selectedTilesForBooster.includes(clickedTile)) {
+        this.selectedTilesForBooster.push(clickedTile);
+      }
 
-    if (this.activeBooster?.isActive) {
-      const result = this.activeBooster
-        .setGrid(this.gm.getGrid())
-        .selectTile(clickedTile)
-        .getResult();
+      const boosterLogic = this.activeBoosterButton.getLogic();
+      const requiredCount = boosterLogic.requiredTiles;
 
-      if (result?.group) group = result.group;
-      if (result?.grid) this.gm.setGrid(result.grid);
-      if (result?.complete) return;
+      if (this.selectedTilesForBooster.length === requiredCount) {
+        const result = boosterLogic.execute(this.selectedTilesForBooster, this.gm.getGrid());
+        this.processBoosterResult(result);
+      }
     } else {
-      group = this.gm.getConnectedCells(clickedTile.x, clickedTile.y);
+      const group = this.gm.getConnectedCells(clickedTile.x, clickedTile.y);
+
+      if (group.length <= this.connectionCount) return;
+
+      this.calculateScore(group.length);
+      this.moves--;
+      this.updateUI();
+
+      await this.destroyTiles(group);
+
+      this.checkWinCondition();
     }
+  }
 
-    if (group.length <= this.connectionCount) {
-      return;
+  private processBoosterResult(result: BoosterResult) {
+    if (!result) return;
+
+    switch (result.type) {
+      case BoosterActionType.DESTROY:
+        this.calculateScore(result.tiles.length);
+        this.updateUI();
+        this.destroyTiles(result.tiles);
+        this.checkWinCondition();
+        break;
+
+      case BoosterActionType.SWAP:
+        const [tile1, tile2] = result.tiles;
+
+        this.swapTiles(tile1, tile2);
+        break;
     }
-
-    this.burnTiles(group);
-    this.dropTiles();
-    this.fillEmptySpaces();
-
-    this.calculateScore(group.length);
 
     this.moves--;
 
-    this.updateUI();
-
-    this.scheduleOnce(() => {
-      this.checkWinCondition();
-      this.checkGameOver();
-    }, this.animationDuration * 2);
+    this.activeBoosterButton.onBoosterUsed();
+    this.activeBoosterButton = null;
+    this.selectedTilesForBooster = [];
   }
 
-  burnTiles(group: Tile[]) {
+  swapTiles(tile1: Tile, tile2: Tile) {
+    const fX = tile1.x;
+    const fY = tile1.y;
+    const sX = tile2.x;
+    const sY = tile2.y;
+
+    tile1.setCoordinates(sX, sY);
+    tile2.setCoordinates(fX, fY);
+
+    this.gm.setCell(fX, fY, tile2);
+    this.gm.setCell(sX, sY, tile1);
+
+    cc.tween(tile1.node as any)
+      .to(0.3, { position: tile2.node.getPosition() }, { easing: 'backOut' })
+      .start();
+
+    cc.tween(tile2.node as any)
+      .to(0.3, { position: tile1.node.getPosition() }, { easing: 'backOut' })
+      .start();
+  }
+
+  async destroyTiles(tiles: Tile[]): Promise<void> {
+    if (tiles.length === 0) return;
+
+    await this.burnTiles(tiles);
+    await this.dropTiles();
+    await this.fillEmptySpaces();
+  }
+
+  async burnTiles(group: Tile[]): Promise<void[]> {
+    const promises: Promise<void>[] = [];
+
     for (let tile of group) {
-      const fadeOut = cc.fadeOut(this.animationDuration);
-      const scaleDown = cc.scaleTo(this.animationDuration, 0);
-      const spawn = cc.spawn(fadeOut, scaleDown);
+      const p = new Promise<void>(res => {
+        cc.tween(tile.node)
+          .parallel(
+            cc.tween().to(this.animationDuration, { opacity: 0 }),
+            cc.tween().to(this.animationDuration, { scale: 0 })
+          )
+          .call(() => {
+            tile.node.destroy();
+            this.gm.setCell(tile.x, tile.y, null);
+            res();
+          })
+          .start();
+      });
 
-      tile.node.runAction(cc.sequence(
-        spawn,
-        cc.callFunc(() => {
-          tile.node.destroy();
-          this.gm.setCell(tile.x, tile.y, null);
-        })
-      ));
+      promises.push(p);
     }
+
+    return Promise.all(promises);
   }
 
-  dropTiles() {
-    this.scheduleOnce(() => {
-      for (let x = 0; x < this.fieldWidth; x++) {
-        let writeIndex = 0;
+  async dropTiles(): Promise<void> {
+    const promises: Promise<void>[] = [];
 
-        for (let y = 0; y < this.fieldHeight; y++) {
-          if (this.gm.getCell(x, y) !== null) {
-            if (writeIndex !== y) {
-              this.gm.setCell(x, writeIndex, this.gm.getCell(x, y));
-              this.gm.setCell(x, y, null);
+    for (let x = 0; x < this.fieldWidth; x++) {
+      let writeIndex = 0;
 
-              const tile = this.gm.getCell(x, writeIndex);
+      for (let y = 0; y < this.fieldHeight; y++) {
+        if (this.gm.getCell(x, y) !== null) {
+          if (writeIndex !== y) {
+            this.gm.setCell(x, writeIndex, this.gm.getCell(x, y));
+            this.gm.setCell(x, y, null);
 
-              tile.setCoordinates(x, writeIndex);
-              this.animateTileToPosition(tile);
-            }
-            writeIndex++;
+            const tile = this.gm.getCell(x, writeIndex);
+
+            tile.setCoordinates(x, writeIndex);
+            promises.push(this.animateTileToPosition(tile));
+          }
+          writeIndex++;
+        }
+      }
+    }
+
+    await Promise.all(promises);
+  }
+
+  async fillEmptySpaces() {
+    const promises: Promise<void>[] = [];
+    const startX = -(this.fieldWidth - 1) * this.tileSizeW / 2;
+    const startY = -(this.fieldHeight - 1) * this.tileSizeH / 2;
+
+    for (let x = 0; x < this.fieldWidth; x++) {
+      for (let y = 0; y < this.fieldHeight; y++) {
+        const cell = this.gm.getCell(x, y);
+
+        if (cell === null) {
+          const tile = this.createTile(x, y, startX, startY);
+
+          this.gm.setCell(x, y, tile);
+
+          if (tile) {
+            tile.node.setPosition(
+              startX + x * this.tileSizeW,
+              startY + this.fieldHeight * this.tileSizeH
+            );
+
+            promises.push(this.animateTileToPosition(tile));
           }
         }
       }
-    }, this.animationDuration);
+    }
+
+    await Promise.all(promises);
   }
 
-  fillEmptySpaces() {
-    this.scheduleOnce(() => {
-      const startX = -(this.fieldWidth - 1) * this.tileSizeW / 2;
-      const startY = -(this.fieldHeight - 1) * this.tileSizeH / 2;
-
-      for (let x = 0; x < this.fieldWidth; x++) {
-        for (let y = 0; y < this.fieldHeight; y++) {
-          const cell = this.gm.getCell(x, y);
-
-          if (cell === null) {
-            const tile = this.createTile(x, y, startX, startY);
-
-            this.gm.setCell(x, y, tile);
-
-            if (tile) {
-              tile.node.setPosition(
-                startX + x * this.tileSizeW,
-                startY + this.fieldHeight * this.tileSizeH
-              );
-
-              this.animateTileToPosition(tile);
-            }
-          }
-        }
-      }
-    }, this.animationDuration * 2);
-  }
-
-  animateTileToPosition(tile: Tile) {
+  async animateTileToPosition(tile: Tile): Promise<void> {
     const startY = -(this.fieldHeight - 1) * this.tileSizeH / 2;
     const targetPos = cc.v2(tile.node.position.x, startY + tile.y * this.tileSizeH);
-    const moveAction = cc.moveTo(this.animationDuration, targetPos);
 
-    tile.node.runAction(moveAction);
+    return new Promise<void>(res => {
+      cc.tween(tile.node as any)
+        .to(this.animationDuration, { position: targetPos })
+        .call(() => res())
+        .start();
+    });
   }
 
   calculateScore(tilesCount: number) {
@@ -274,13 +318,21 @@ export default class GameController extends cc.Component {
     if (this.score >= this.targetScore) {
       this.gameOver = true;
       this.showWinPanel(true);
+    } else {
+      this.checkGameOver();
     }
   }
 
   checkGameOver() {
     if (this.gameOver) return;
 
-    let hasMoves = this.gm.hasValidMoves(2);
+    const hasMoves = this.gm.hasValidMoves(this.connectionCount);
+
+    if (!hasMoves && this.lives > 0) {
+      this.lives--;
+      this.gm.shuffle(5, this.connectionCount);
+      console.log('shuffle');
+    }
 
     if (!hasMoves || this.moves <= 0) {
       this.gameOver = true;
@@ -295,7 +347,7 @@ export default class GameController extends cc.Component {
       const bg = this.winPanel.getChildByName('bg');
 
       cc.tween(bg)
-        .to(1, { opacity: show ? 200 : 0 })
+        .to(1, { opacity: show ? 100 : 0 })
         .start();
     }
   }
@@ -307,16 +359,12 @@ export default class GameController extends cc.Component {
       const bg = this.losePanel.getChildByName('bg');
 
       cc.tween(bg)
-        .to(1, { opacity: show ? 200 : 0 })
+        .to(1, { opacity: show ? 100 : 0 })
         .start();
     }
   }
 
   restartGame() {
-    this.boosters.forEach(booster => {
-      booster.off(cc.Node.EventType.TOUCH_END, this.activateBooster, this);
-    });
-
     this.initGame();
   }
 }

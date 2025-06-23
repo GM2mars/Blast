@@ -39,11 +39,14 @@ export class GridMaster {
 
     if (visited.has(key)) return [];
     if (!this.isValidCoordinate(x, y)) return [];
-    if (this.grid[x][y].value !== targetValue) return [];
+
+    const tile = this.grid[x][y];
+
+    if (!tile || tile.value !== targetValue) return [];
 
     visited.add(key);
 
-    let result = [this.grid[x][y]];
+    let result = [tile];
 
     const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
 
@@ -117,24 +120,36 @@ export class GridMaster {
   }
 
   hasValidMoves(countGroup: number = 2) {
+    const visited = Array(this.width).fill(null).map(() => Array(this.height).fill(false));
+    const floodCount = (sx: number, sy: number, value: any) => {
+      let stack = [[sx, sy]];
+      let cnt = 0;
+      visited[sx][sy] = true;
+
+      while (stack.length) {
+        const [x, y] = stack.pop()!;
+        cnt++;
+        for (let [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (
+            this.isValidCoordinate(nx, ny) &&
+            !visited[nx][ny] &&
+            this.grid[nx][ny]?.value === value
+          ) {
+            visited[nx][ny] = true;
+            stack.push([nx, ny]);
+          }
+        }
+      }
+      return cnt;
+    };
+
     for (let x = 0; x < this.width; x++) {
       for (let y = 0; y < this.height; y++) {
-        if (this.grid[x][y] === null) continue;
-
-        let validCount = 0;
-        const currentValue = this.grid[x][y].value;
-        const neighbors = [
-          [x + 1, y],
-          [x, y + 1],
-          [x - 1, y],
-          [x, y - 1],
-        ];
-
-        for (let [nx, ny] of neighbors) {
-          if (this.isValidCoordinate(nx, ny) && this.grid[nx][ny]?.value === currentValue) validCount++;
+        if (!this.grid[x][y] || visited[x][y]) continue;
+        if (floodCount(x, y, this.grid[x][y].value) >= countGroup) {
+          return true;
         }
-
-        if (validCount >= countGroup) return true;
       }
     }
 

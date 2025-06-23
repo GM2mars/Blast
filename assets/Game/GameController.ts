@@ -48,14 +48,20 @@ export default class GameController extends cc.Component {
   @property(cc.Integer)
   tilesCount = 5;
 
-  @property(cc.Float)
-  animationDuration = 0.3;
-
   @property({ type: cc.Integer, tooltip: "without target tile" })
   countGroup = 2;
 
   @property(cc.Integer)
   lives = 3;
+
+  @property(cc.Float)
+  burnDuration = 0.2;
+
+  @property(cc.Float)
+  dropDuration = 0.2;
+
+  @property(cc.Float)
+  insertDuration = 0.2;
 
   private activeBoosterButton: BoosterButton | null = null;
   private selectedTilesForBooster: Tile[] = [];
@@ -64,13 +70,18 @@ export default class GameController extends cc.Component {
   private moves: number = 0;
   private gameOver: boolean = false;
   private currentLives: number = 3;
+  private animationDuration: number = 0.2;
+  private isLocking: boolean = false;
+  private checkGameOverThrottle: () => void;
 
   onLoad() {
     this.initGame();
   }
 
   initGame() {
+    this.isLocking = false;
     this.score = 0;
+    this.animationDuration = this.burnDuration + this.dropDuration + this.insertDuration;
     this.moves = this.maxMoves;
     this.currentLives = this.lives;
     this.gameArea.removeAllChildren();
@@ -80,6 +91,7 @@ export default class GameController extends cc.Component {
     this.hideEndGameUI();
     this.createGameField();
     this.updateUI();
+    this.checkGameOverThrottle = debounce(this.checkGameOverCondition.bind(this), this.animationDuration);
   }
 
   public activateBooster(boosterButton: BoosterButton) {
@@ -139,7 +151,7 @@ export default class GameController extends cc.Component {
 
       if (this.selectedTilesForBooster.length === requiredCount) {
         const result = boosterLogic.execute(this.selectedTilesForBooster, this.gm.getGrid());
-        this.processBoosterResult(result);
+        await this.processBoosterResult(result);
       }
     } else {
       const group = this.gm.getConnectedCells(clickedTile.x, clickedTile.y);
@@ -147,12 +159,13 @@ export default class GameController extends cc.Component {
       if (group.length < this.countGroup) return;
 
       this.calculateScore(group.length);
-      this.moves--;
-      this.updateUI();
-
-      await this.destroyTiles(group);
       this.checkWinCondition();
+      await this.destroyTiles(group);
     }
+
+    this.moves--;
+    this.checkGameOverThrottle();
+    this.updateUI();
   }
 
   private async processBoosterResult(result: BoosterResult) {
@@ -161,24 +174,19 @@ export default class GameController extends cc.Component {
     switch (result.type) {
       case BoosterActionType.DESTROY:
         this.calculateScore(result.tiles.length);
-        this.updateUI();
+        this.checkWinCondition();
         await this.destroyTiles(result.tiles);
         break;
 
       case BoosterActionType.SWAP:
         const [tile1, tile2] = result.tiles;
-
         await this.swapTiles(tile1, tile2);
         break;
     }
 
-    this.moves--;
-
     this.activeBoosterButton.onBoosterUsed();
     this.activeBoosterButton = null;
     this.selectedTilesForBooster = [];
-
-    this.checkWinCondition();
   }
 
   async swapTiles(tile1: Tile, tile2: Tile): Promise<void[]> {
@@ -193,17 +201,20 @@ export default class GameController extends cc.Component {
     this.gm.setCell(sX, sY, tile1);
 
     return Promise.all([
-      this.animateTileToPosition(tile1),
-      this.animateTileToPosition(tile2)
+      this.animateTileToPosition(tile1, this.dropDuration),
+      this.animateTileToPosition(tile2, this.dropDuration),
     ]);
   }
 
   async destroyTiles(tiles: Tile[]): Promise<void> {
     if (tiles.length === 0) return;
+    this.isLocking = true;
 
     await this.burnTiles(tiles);
     await this.dropTiles();
     await this.fillEmptySpaces();
+
+    this.isLocking = false;
   }
 
   async burnTiles(group: Tile[]): Promise<void> {
@@ -211,11 +222,9 @@ export default class GameController extends cc.Component {
 
     for (let tile of group) {
       const p = new Promise<void>(res => {
-        cc.tween(tile.node)
-          .parallel(
-            cc.tween().to(this.animationDuration, { opacity: 0 }),
-            cc.tween().to(this.animationDuration, { scale: 0 })
-          )
+
+        cc.tween(tile.node as any)
+          .to(this.burnDuration, { opacity: 0, scale: 0 })
           .call(() => {
             tile.node.destroy();
             this.gm.setCell(tile.x, tile.y, null);
@@ -245,7 +254,7 @@ export default class GameController extends cc.Component {
             const tile = this.gm.getCell(x, writeIndex);
 
             tile.setCoordinates(x, writeIndex);
-            promises.push(this.animateTileToPosition(tile));
+            promises.push(this.animateTileToPosition(tile, this.dropDuration));
           }
           writeIndex++;
         }
@@ -275,7 +284,7 @@ export default class GameController extends cc.Component {
               startY + this.fieldHeight * this.tileSizeH
             );
 
-            promises.push(this.animateTileToPosition(tile));
+            promises.push(this.animateTileToPosition(tile, this.insertDuration));
           }
         }
       }
@@ -284,14 +293,14 @@ export default class GameController extends cc.Component {
     await Promise.all(promises);
   }
 
-  async animateTileToPosition(tile: Tile): Promise<void> {
+  async animateTileToPosition(tile: Tile, duration: number): Promise<void> {
     const startY = -(this.fieldHeight - 1) * this.tileSizeH / 2;
     const startX = -(this.fieldWidth - 1) * this.tileSizeW / 2;
     const targetPos = cc.v2(startX + tile.x * this.tileSizeW, startY + tile.y * this.tileSizeH);
 
     return new Promise<void>(res => {
       cc.tween(tile.node as any)
-        .to(this.animationDuration, { position: targetPos })
+        .to(duration, { position: targetPos })
         .call(() => res())
         .start();
     });
@@ -307,7 +316,7 @@ export default class GameController extends cc.Component {
         const tile = this.gm.getCell(x, y);
 
         if (tile) {
-          promises.push(this.animateTileToPosition(tile));
+          promises.push(this.animateTileToPosition(tile, this.dropDuration));
         }
       }
     }
@@ -337,25 +346,21 @@ export default class GameController extends cc.Component {
     if (this.score >= this.targetScore) {
       this.gameOver = true;
       this.showWinPanel(true);
-    } else {
-      this.checkGameOver();
     }
   }
 
-  checkGameOver() {
-    if (this.gameOver) return;
+  async checkGameOverCondition() {
+    if (this.gameOver || this.isLocking) return;
 
-    const hasMoves = this.gm.hasValidMoves(this.countGroup);
+    const canMove = this.gm.hasValidMoves(this.countGroup);
 
-    console.log({ hasMoves, moves: this.moves, live: this.currentLives });
-
-    if (!hasMoves && this.currentLives > 0) {
+    if (!canMove && this.currentLives > 0) {
       this.currentLives--;
-      this.shuffleTiles();
+      await this.shuffleTiles();
       return;
     }
 
-    if (!hasMoves || this.moves <= 0) {
+    if (!canMove || this.moves <= 0) {
       this.gameOver = true;
       this.showLosePanel(true);
     }

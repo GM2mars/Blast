@@ -334,9 +334,11 @@
     "targetScore": 5000,
     "maxMoves": 30,
     "tilesCount": 5,
-    "animationDuration": 0.3,
     "countGroup": 3,
     "lives": 3,
+    "burnDuration": 0.2,
+    "dropDuration": 0.2,
+    "insertDuration": 0.2,
     "_id": "e7sDyKl1BGBp5wv7iIZTqH"
   },
   {

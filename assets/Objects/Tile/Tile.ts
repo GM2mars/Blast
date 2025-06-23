@@ -16,12 +16,24 @@ export default class Tile extends cc.Component {
   }
 
   init(x: number, y: number, value: number, gameController: any) {
+    this.resetState();
+
     this.x = x;
     this.y = y;
     this.value = value;
     this.gameController = gameController;
 
     this.getComponent(cc.Sprite).spriteFrame = this.spriteFrames[value];
+  }
+
+  resetState() {
+    this.node.opacity = 255;
+    this.node.scale = 1;
+    this.node.scaleX = 1;
+    this.node.scaleY = 1;
+    this.node.rotation = 0;
+    this.node.skewX = 0;
+    this.node.skewY = 0;
   }
 
   setCoordinates(x: number, y: number) {

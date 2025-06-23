@@ -73,6 +73,7 @@ export default class GameController extends cc.Component {
   private animationDuration: number = 0.2;
   private isLocking: boolean = false;
   private checkGameOverThrottle: () => void;
+  private tilesPool: cc.NodePool = new cc.NodePool('Tile');
 
   onLoad() {
     this.initGame();
@@ -125,7 +126,10 @@ export default class GameController extends cc.Component {
   }
 
   createTile(x: number, y: number, startX: number, startY: number) {
-    const tileNode = cc.instantiate(this.tilePrefab);
+    const tileNode = this.tilesPool.size() > 0
+      ? this.tilesPool.get()
+      : cc.instantiate(this.tilePrefab);
+
     const tileComponent = tileNode.getComponent(Tile);
     const spriteIndex = Math.floor(Math.random() * this.tilesCount);
     const posX = startX + x * this.tileSizeW;
@@ -226,7 +230,7 @@ export default class GameController extends cc.Component {
         cc.tween(tile.node as any)
           .to(this.burnDuration, { opacity: 0, scale: 0 })
           .call(() => {
-            tile.node.destroy();
+            this.tilesPool.put(tile.node);
             this.gm.setCell(tile.x, tile.y, null);
             res();
           })

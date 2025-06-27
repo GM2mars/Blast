@@ -10,7 +10,32 @@
   "packable": true,
   "width": 1080,
   "height": 1920,
-  "platformSettings": {},
+  "platformSettings": {
+    "default": {
+      "formats": [
+        {
+          "name": "webp",
+          "quality": 80
+        }
+      ]
+    },
+    "ios": {
+      "formats": [
+        {
+          "name": "pvrtc_4bits",
+          "quality": "fast"
+        }
+      ]
+    },
+    "web": {
+      "formats": [
+        {
+          "name": "webp",
+          "quality": 80
+        }
+      ]
+    }
+  },
   "subMetas": {
     "background": {
       "ver": "1.0.6",

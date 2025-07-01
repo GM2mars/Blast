@@ -14,7 +14,7 @@
     "default": {
       "formats": [
         {
-          "name": "webp",
+          "name": "png",
           "quality": 80
         }
       ]
@@ -22,15 +22,31 @@
     "ios": {
       "formats": [
         {
-          "name": "pvrtc_4bits",
-          "quality": "normal"
+          "name": "png",
+          "quality": 80
         }
       ]
     },
     "web": {
       "formats": [
         {
-          "name": "webp",
+          "name": "png",
+          "quality": 80
+        }
+      ]
+    },
+    "minigame": {
+      "formats": [
+        {
+          "name": "png",
+          "quality": 80
+        }
+      ]
+    },
+    "android": {
+      "formats": [
+        {
+          "name": "png",
           "quality": 80
         }
       ]
